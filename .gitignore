@@ -1,0 +1,40 @@
+
+old_main.js
+old_main2.js
+check_packages.py
+get_os_info.py
+troubleshooting.txt
+models/old_document_processor.py
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# PyCharm project files
+.idea/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# macOS files
+.DS_Store
+
+# aider-chat
+.aider
