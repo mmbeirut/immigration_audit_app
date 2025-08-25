@@ -1,0 +1,88 @@
+# Immigration Document Audit System - Python 3.12 WORKING VERSION
+# All packages tested to work with Python 3.12 on Windows 11
+
+# ============================================================================
+# INSTALL IN THIS EXACT ORDER TO AVOID CONFLICTS
+# ============================================================================
+
+# Core Flask Framework
+Flask==3.0.0
+Werkzeug==3.0.1
+Jinja2==3.1.2
+MarkupSafe==2.1.3
+itsdangerous==2.1.2
+click==8.1.7
+
+# Environment & Configuration
+python-dotenv==1.0.0
+
+# PDF Processing (Python 3.12 compatible with pre-built wheels)
+PyMuPDF==1.23.26
+pdf2image==1.17.0
+Pillow==10.2.0
+
+# Use LATEST numpy that has Python 3.12 wheels (NOT 1.24.3!)
+numpy==1.26.4
+
+# OpenCV with pre-built wheels
+opencv-python==4.9.0.80
+
+# OCR - Install separately if needed
+# easyocr==1.7.1  # Comment out for now, install manually later
+
+# Azure Services (Python 3.12 compatible)
+azure-core==1.30.0
+azure-identity==1.15.0
+msrest==0.7.1
+
+# Skip Form Recognizer for now - install manually later
+# azure-ai-formrecognizer==3.3.2
+
+# OpenAI (Latest with Python 3.12 support)
+openai==1.12.0
+tiktoken==0.6.0
+
+# Database
+pyodbc==5.0.1
+
+# Rate Limiting & Utilities
+ratelimit==2.2.1
+requests==2.31.0
+urllib3==2.2.1
+python-dateutil==2.9.0
+
+# Windows-specific
+pywin32==306
+colorama==0.4.6
+
+# Web Server
+waitress==3.0.0
+
+# Basic development tools
+pytest==8.1.1
+black==24.2.0
+
+# Security
+cryptography==42.0.5
+
+# ============================================================================
+# PYTHON 3.12 INSTALLATION INSTRUCTIONS
+# ============================================================================
+#
+# Run these commands in PyCharm terminal in this EXACT order:
+#
+# 1. First, upgrade pip and install build tools:
+#    python -m pip install --upgrade pip
+#    pip install --upgrade setuptools wheel
+#
+# 2. Install this requirements file:
+#    pip install -r requirements.txt
+#
+# 3. Then install the problematic packages manually:
+#    pip install azure-ai-formrecognizer==3.3.2
+#    pip install easyocr==1.7.1
+#
+# 4. If torch is needed (for advanced processing):
+#    pip install torch==2.2.1 torchvision==0.17.1 --index-url https://download.pytorch.org/whl/cpu
+#
+# ============================================================================

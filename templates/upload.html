@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h2 class="mb-0">
+                    <i class="fas fa-upload"></i> Upload Immigration Documents
+                </h2>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-4">
+                    Upload PDF files containing immigration documents for automated data extraction and audit analysis.
+                </p>
+
+                <form method="POST" action="{{ url_for('upload_file') }}" enctype="multipart/form-data" id="uploadForm">
+                    <!-- File Selection -->
+                    <div class="mb-4" id="fileSection">
+                        <label for="file" class="form-label">
+                            <i class="fas fa-file-pdf"></i> Select PDF Document
+                        </label>
+                        <input type="file" class="form-control" name="file" id="file" accept=".pdf" required>
+                        <div class="form-text">
+                            Maximum file size: 16MB. Supported format: PDF only.
+                        </div>
+                        <!-- File validation messages will appear here -->
+                    </div>
+
+                    <!-- Processing Mode -->
+                    <div class="mb-4">
+                        <label class="form-label">Processing Mode</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="processing_mode"
+                                   value="multi_document" id="multiDoc" checked>
+                            <label class="form-check-label" for="multiDoc">
+                                <strong>Multi-Document Audit</strong> (Recommended for file audits)
+                                <br><small class="text-muted">Automatically detects and processes multiple document types in a single file</small>
+                            </label>
+                        </div>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="radio" name="processing_mode"
+                                   value="single_document" id="singleDoc">
+                            <label class="form-check-label" for="singleDoc">
+                                <strong>Single Document Type</strong> (Faster processing)
+                                <br><small class="text-muted">Process file as a single document type</small>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Single Document Options -->
+                    <div id="singleDocOptions" style="display: none;">
+                        <div class="mb-3">
+                            <label for="document_type" class="form-label">Document Type</label>
+                            <select name="document_type" id="document_type" class="form-select">
+                                <option value="auto">Auto-detect</option>
+                                <optgroup label="USCIS Forms">
+                                    <option value="I797">I-797 Notice of Action (Approval/Denial)</option>
+                                    <option value="I797C">I-797C Receipt Notice</option>
+                                    <option value="I129">I-129 Petition for Nonimmigrant Worker</option>
+                                </optgroup>
+                                <optgroup label="Department of Labor">
+                                    <option value="PERM">PERM Labor Certification (Form 9089)</option>
+                                    <option value="PWD">Prevailing Wage Determination (Form 9141)</option>
+                                    <option value="LCA">Labor Condition Application (Form 9035)</option>
+                                </optgroup>
+                                <optgroup label="Entry & Status Documents">
+                                    <option value="I94">I-94 Arrival/Departure Record</option>
+                                    <option value="EAD">Employment Authorization Document (I-766)</option>
+                                    <option value="GREEN_CARD">Permanent Resident Card (Green Card)</option>
+                                </optgroup>
+                                <optgroup label="Travel Documents">
+                                    <option value="US_PASSPORT">US Passport</option>
+                                    <option value="FOREIGN_PASSPORT">Foreign Passport</option>
+                                    <option value="VISA_STAMP">Visa Stamp</option>
+                                </optgroup>
+                            </select>
+                            <div class="form-text">
+                                Choose the specific document type if known, or use auto-detect to let the system identify it.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Multi-Document Options -->
+                    <div id="multiDocOptions">
+                        <div class="mb-4">
+                            <label class="form-label">Audit Options</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="check_completeness"
+                                       id="completeness" checked>
+                                <label class="form-check-label" for="completeness">
+                                    <strong>Check case completeness</strong> against typical requirements
+                                    <br><small class="text-muted">Identifies missing documents for complete immigration cases</small>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="cross_reference"
+                                       id="crossRef" checked>
+                                <label class="form-check-label" for="crossRef">
+                                    <strong>Cross-reference person data</strong> across documents
+                                    <br><small class="text-muted">Links documents to individuals and checks for inconsistencies</small>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="timeline_analysis"
+                                       id="timeline" checked>
+                                <label class="form-check-label" for="timeline">
+                                    <strong>Generate case timeline</strong> analysis
+                                    <br><small class="text-muted">Creates chronological sequence of immigration events</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Data Quality Options -->
+                    <div class="mb-4">
+                        <label class="form-label">Data Quality</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="validate_fields"
+                                   id="validate" checked>
+                            <label class="form-check-label" for="validate">
+                                <strong>Validate extracted field formats</strong>
+                                <br><small class="text-muted">Checks receipt numbers, dates, and other field formats for accuracy</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="check_duplicates"
+                                   id="duplicates" checked>
+                            <label class="form-check-label" for="duplicates">
+                                <strong>Check for potential duplicate records</strong>
+                                <br><small class="text-muted">Identifies possible duplicate documents or data entries</small>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Processing Tips -->
+                    <div class="alert alert-info mb-4">
+                        <h6 class="alert-heading"><i class="fas fa-lightbulb"></i> Processing Tips</h6>
+                        <ul class="mb-0 small">
+                            <li><strong>Multi-Document Mode:</strong> Best for complete file audits containing multiple document types</li>
+                            <li><strong>Single Document Mode:</strong> Faster for individual documents when you know the type</li>
+                            <li><strong>File Quality:</strong> Clear, non-password protected PDFs work best</li>
+                            <li><strong>Processing Time:</strong> Typically 30-60 seconds depending on file size and complexity</li>
+                        </ul>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-cogs"></i> Process Document
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Progress Bar -->
+                <div class="progress mt-3" style="display: none;" id="progressContainer">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         id="progressBar" role="progressbar" style="width: 0%"
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Supported Document Types Information -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <button class="btn btn-link text-decoration-none p-0 text-start" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#supportedDocs">
+                        <i class="fas fa-info-circle"></i> Supported Document Types
+                    </button>
+                </h5>
+            </div>
+            <div class="collapse" id="supportedDocs">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-primary">USCIS Forms</h6>
+                            <ul class="list-unstyled mb-3">
+                                <li><i class="fas fa-check text-success"></i> I-797 Notice of Action (Approvals/Denials)</li>
+                                <li><i class="fas fa-check text-success"></i> I-797C Receipt Notices</li>
+                                <li><i class="fas fa-check text-success"></i> I-129 Nonimmigrant Worker Petitions</li>
+                                <li><i class="fas fa-check text-success"></i> I-140 Immigrant Worker Petitions</li>
+                            </ul>
+
+                            <h6 class="text-primary">Department of Labor</h6>
+                            <ul class="list-unstyled mb-3">
+                                <li><i class="fas fa-check text-success"></i> PERM Labor Certification (Form 9089)</li>
+                                <li><i class="fas fa-check text-success"></i> Prevailing Wage Determination (Form 9141)</li>
+                                <li><i class="fas fa-check text-success"></i> Labor Condition Application (Form 9035/LCA)</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-primary">Entry & Status Documents</h6>
+                            <ul class="list-unstyled mb-3">
+                                <li><i class="fas fa-check text-success"></i> I-94 Arrival/Departure Records</li>
+                                <li><i class="fas fa-check text-success"></i> Employment Authorization Document (EAD/I-766)</li>
+                                <li><i class="fas fa-check text-success"></i> Permanent Resident Card (Green Card/I-551)</li>
+                            </ul>
+
+                            <h6 class="text-primary">Travel Documents</h6>
+                            <ul class="list-unstyled mb-3">
+                                <li><i class="fas fa-check text-success"></i> US Passports</li>
+                                <li><i class="fas fa-check text-success"></i> Foreign Passports</li>
+                                <li><i class="fas fa-check text-success"></i> Visa Stamps</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="alert alert-light">
+                        <small><strong>Note:</strong> The system can also process other immigration-related documents using generic extraction methods.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

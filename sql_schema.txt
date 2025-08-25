@@ -1,0 +1,454 @@
+-- =====================================================
+-- Immigration Document Audit System Database Schema
+-- SQL Server DDL - Complete Version
+-- =====================================================
+
+-- Processing Sessions Table
+IF OBJECT_ID('processing_sessions', 'U') IS NOT NULL
+    DROP TABLE processing_sessions;
+
+CREATE TABLE processing_sessions (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    processing_id NVARCHAR(50) UNIQUE NOT NULL,
+    file_name NVARCHAR(255) NOT NULL,
+    file_size_bytes BIGINT,
+    processing_mode NVARCHAR(20) DEFAULT 'multi_document',
+    ocr_method_used NVARCHAR(20),
+    total_pages INT,
+    segments_found INT DEFAULT 0,
+    people_identified INT DEFAULT 0,
+    documents_processed INT DEFAULT 0,
+    processing_duration_seconds INT,
+    status NVARCHAR(20) DEFAULT 'processing',
+    processed_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    results_json NTEXT,
+    summary_json NTEXT,
+    error_message NTEXT,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+);
+
+-- Persons Table
+IF OBJECT_ID('persons', 'U') IS NOT NULL
+    DROP TABLE persons;
+
+CREATE TABLE persons (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    person_id NVARCHAR(20) UNIQUE NOT NULL,
+    name NVARCHAR(255),
+    first_name NVARCHAR(100),
+    last_name NVARCHAR(100),
+    middle_name NVARCHAR(100),
+    date_of_birth DATE,
+    country_of_birth NVARCHAR(100),
+    country_of_citizenship NVARCHAR(100),
+    gender NVARCHAR(10),
+    alien_number NVARCHAR(20),
+    ssn_last_four NVARCHAR(4),
+    primary_processing_id NVARCHAR(50),
+    document_count INT DEFAULT 0,
+    last_document_date DATE,
+    data_quality_score FLOAT DEFAULT 0.0,
+    has_inconsistencies BIT DEFAULT 0,
+    notes NTEXT,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    FOREIGN KEY (primary_processing_id) REFERENCES processing_sessions(processing_id)
+);
+
+-- USCIS Forms Table
+IF OBJECT_ID('uscis_forms', 'U') IS NOT NULL
+    DROP TABLE uscis_forms;
+
+CREATE TABLE uscis_forms (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    person_id NVARCHAR(20) NOT NULL,
+    processing_id NVARCHAR(50) NOT NULL,
+    receipt_number NVARCHAR(20),
+    notice_date DATE,
+    received_date DATE,
+    priority_date DATE,
+    approval_date DATE,
+    denial_date DATE,
+    case_type NVARCHAR(100),
+    form_type NVARCHAR(20),
+    notice_type NVARCHAR(100),
+    petition_type NVARCHAR(100),
+    classification NVARCHAR(50),
+    petitioner NVARCHAR(255),
+    petitioner_ein NVARCHAR(20),
+    beneficiary NVARCHAR(255),
+    attorney_name NVARCHAR(255),
+    attorney_bar_number NVARCHAR(50),
+    service_center NVARCHAR(100),
+    valid_from DATE,
+    valid_to DATE,
+    authorized_stay_until DATE,
+    i94_number NVARCHAR(15),
+    passport_number NVARCHAR(20),
+    passport_country NVARCHAR(50),
+    consulate NVARCHAR(100),
+    priority_category NVARCHAR(10),
+    priority_country NVARCHAR(50),
+    annual_salary DECIMAL(15,2),
+    job_title NVARCHAR(255),
+    employer_name NVARCHAR(255),
+    worksite_address NTEXT,
+    rfe_issued BIT DEFAULT 0,
+    rfe_response_due DATE,
+    appeal_filed BIT DEFAULT 0,
+    motion_filed BIT DEFAULT 0,
+    page_numbers NVARCHAR(50),
+    confidence_score FLOAT DEFAULT 0.0,
+    validation_status NVARCHAR(20) DEFAULT 'pending',
+    validation_notes NTEXT,
+    raw_extracted_data NTEXT,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    FOREIGN KEY (person_id) REFERENCES persons(person_id),
+    FOREIGN KEY (processing_id) REFERENCES processing_sessions(processing_id)
+);
+
+-- DOL Forms Table
+IF OBJECT_ID('dol_forms', 'U') IS NOT NULL
+    DROP TABLE dol_forms;
+
+CREATE TABLE dol_forms (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    person_id NVARCHAR(20) NOT NULL,
+    processing_id NVARCHAR(50) NOT NULL,
+    case_number NVARCHAR(50),
+    form_type NVARCHAR(20),
+    case_status NVARCHAR(50),
+    filing_date DATE,
+    determination_date DATE,
+    certification_date DATE,
+    expiration_date DATE,
+    valid_from DATE,
+    valid_until DATE,
+    employer_name NVARCHAR(255),
+    employer_ein NVARCHAR(20),
+    employer_address NTEXT,
+    job_title NVARCHAR(255),
+    soc_code NVARCHAR(20),
+    soc_title NVARCHAR(255),
+    wage_offered DECIMAL(15,2),
+    wage_unit NVARCHAR(20),
+    prevailing_wage DECIMAL(15,2),
+    prevailing_wage_source NVARCHAR(100),
+    worksite_address NTEXT,
+    worksite_city NVARCHAR(100),
+    worksite_state NVARCHAR(50),
+    worksite_zip NVARCHAR(20),
+    education_required NVARCHAR(255),
+    experience_required NVARCHAR(255),
+    training_required NVARCHAR(255),
+    foreign_worker_name NVARCHAR(255),
+    foreign_worker_country NVARCHAR(50),
+    attorney_name NVARCHAR(255),
+    attorney_state_bar NVARCHAR(50),
+    layoff_occurred BIT DEFAULT 0,
+    layoff_explanation NTEXT,
+    recruitment_steps NTEXT,
+    page_numbers NVARCHAR(50),
+    confidence_score FLOAT DEFAULT 0.0,
+    validation_status NVARCHAR(20) DEFAULT 'pending',
+    validation_notes NTEXT,
+    raw_extracted_data NTEXT,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    FOREIGN KEY (person_id) REFERENCES persons(person_id),
+    FOREIGN KEY (processing_id) REFERENCES processing_sessions(processing_id)
+);
+
+-- I-94 Records Table
+IF OBJECT_ID('i94_records', 'U') IS NOT NULL
+    DROP TABLE i94_records;
+
+CREATE TABLE i94_records (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    person_id NVARCHAR(20) NOT NULL,
+    processing_id NVARCHAR(50) NOT NULL,
+    admission_record_number NVARCHAR(15),
+    arrival_date DATE,
+    departure_date DATE,
+    class_of_admission NVARCHAR(10),
+    admit_until_date DATE,
+    admit_until_text NVARCHAR(20),
+    port_of_entry NVARCHAR(100),
+    port_of_entry_code NVARCHAR(10),
+    carrier_info NVARCHAR(100),
+    flight_number NVARCHAR(20),
+    passport_number NVARCHAR(20),
+    passport_country NVARCHAR(50),
+    passport_expiry_date DATE,
+    visa_number NVARCHAR(50),
+    visa_issue_date DATE,
+    visa_expiry_date DATE,
+    last_name NVARCHAR(100),
+    first_name NVARCHAR(100),
+    middle_name NVARCHAR(100),
+    birth_date DATE,
+    gender NVARCHAR(10),
+    country_of_citizenship NVARCHAR(50),
+    country_of_residence NVARCHAR(50),
+    address_in_us NTEXT,
+    electronic_i94 BIT DEFAULT 1,
+    entry_type NVARCHAR(20),
+    page_numbers NVARCHAR(50),
+    confidence_score FLOAT DEFAULT 0.0,
+    validation_status NVARCHAR(20) DEFAULT 'pending',
+    validation_notes NTEXT,
+    raw_extracted_data NTEXT,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    FOREIGN KEY (person_id) REFERENCES persons(person_id),
+    FOREIGN KEY (processing_id) REFERENCES processing_sessions(processing_id)
+);
+
+-- Passports Table
+IF OBJECT_ID('passports', 'U') IS NOT NULL
+    DROP TABLE passports;
+
+CREATE TABLE passports (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    person_id NVARCHAR(20) NOT NULL,
+    processing_id NVARCHAR(50) NOT NULL,
+    passport_number NVARCHAR(20),
+    passport_type NVARCHAR(20),
+    issuing_country NVARCHAR(50),
+    issuing_authority NVARCHAR(100),
+    issue_date DATE,
+    expiry_date DATE,
+    holder_surname NVARCHAR(100),
+    holder_given_names NVARCHAR(255),
+    birth_date DATE,
+    birth_place NVARCHAR(255),
+    gender NVARCHAR(10),
+    nationality NVARCHAR(50),
+    personal_number NVARCHAR(50),
+    endorsements NTEXT,
+    machine_readable BIT DEFAULT 1,
+    biometric BIT DEFAULT 0,
+    page_count INT,
+    passport_photo_present BIT DEFAULT 0,
+    visa_pages_available INT,
+    page_numbers NVARCHAR(50),
+    confidence_score FLOAT DEFAULT 0.0,
+    validation_status NVARCHAR(20) DEFAULT 'pending',
+    validation_notes NTEXT,
+    raw_extracted_data NTEXT,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    FOREIGN KEY (person_id) REFERENCES persons(person_id),
+    FOREIGN KEY (processing_id) REFERENCES processing_sessions(processing_id)
+);
+
+-- Visas Table
+IF OBJECT_ID('visas', 'U') IS NOT NULL
+    DROP TABLE visas;
+
+CREATE TABLE visas (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    person_id NVARCHAR(20) NOT NULL,
+    processing_id NVARCHAR(50) NOT NULL,
+    visa_number NVARCHAR(50),
+    control_number NVARCHAR(50),
+    foil_number NVARCHAR(50),
+    visa_type NVARCHAR(10),
+    visa_class NVARCHAR(10),
+    visa_category NVARCHAR(20),
+    entries NVARCHAR(10),
+    issue_date DATE,
+    expiry_date DATE,
+    valid_from DATE,
+    valid_until DATE,
+    issuing_post NVARCHAR(100),
+    issuing_post_code NVARCHAR(10),
+    consular_officer NVARCHAR(100),
+    surname NVARCHAR(100),
+    given_names NVARCHAR(255),
+    birth_date DATE,
+    birth_place NVARCHAR(255),
+    nationality NVARCHAR(50),
+    passport_number NVARCHAR(20),
+    passport_issue_date DATE,
+    passport_expiry_date DATE,
+    petition_number NVARCHAR(50),
+    employer_name NVARCHAR(255),
+    duration_of_stay NVARCHAR(50),
+    annotation NTEXT,
+    clearance_received BIT DEFAULT 0,
+    machine_readable BIT DEFAULT 1,
+    immigrant_visa BIT DEFAULT 0,
+    diversity_visa BIT DEFAULT 0,
+    ped_date DATE,
+    page_numbers NVARCHAR(50),
+    confidence_score FLOAT DEFAULT 0.0,
+    validation_status NVARCHAR(20) DEFAULT 'pending',
+    validation_notes NTEXT,
+    raw_extracted_data NTEXT,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    FOREIGN KEY (person_id) REFERENCES persons(person_id),
+    FOREIGN KEY (processing_id) REFERENCES processing_sessions(processing_id)
+);
+
+-- Supporting Documents Table
+IF OBJECT_ID('supporting_documents', 'U') IS NOT NULL
+    DROP TABLE supporting_documents;
+
+CREATE TABLE supporting_documents (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    person_id NVARCHAR(20) NOT NULL,
+    processing_id NVARCHAR(50) NOT NULL,
+    document_type NVARCHAR(50),
+    document_subtype NVARCHAR(50),
+    document_number NVARCHAR(100),
+    issuing_authority NVARCHAR(255),
+    issuing_location NVARCHAR(255),
+    issue_date DATE,
+    expiry_date DATE,
+    holder_name NVARCHAR(255),
+    subject_name NVARCHAR(255),
+    document_language NVARCHAR(50),
+    translation_present BIT DEFAULT 0,
+    apostille_present BIT DEFAULT 0,
+    notarization_present BIT DEFAULT 0,
+    institution_name NVARCHAR(255),
+    degree_type NVARCHAR(100),
+    field_of_study NVARCHAR(255),
+    graduation_date DATE,
+    gpa_score NVARCHAR(20),
+    course_duration NVARCHAR(50),
+    page_numbers NVARCHAR(50),
+    confidence_score FLOAT DEFAULT 0.0,
+    validation_status NVARCHAR(20) DEFAULT 'pending',
+    validation_notes NTEXT,
+    raw_extracted_data NTEXT,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    FOREIGN KEY (person_id) REFERENCES persons(person_id),
+    FOREIGN KEY (processing_id) REFERENCES processing_sessions(processing_id)
+);
+
+-- Data Inconsistencies Table
+IF OBJECT_ID('data_inconsistencies', 'U') IS NOT NULL
+    DROP TABLE data_inconsistencies;
+
+CREATE TABLE data_inconsistencies (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    person_id NVARCHAR(20) NOT NULL,
+    processing_id NVARCHAR(50) NOT NULL,
+    inconsistency_type NVARCHAR(50),
+    field_name NVARCHAR(100),
+    document1_table NVARCHAR(50),
+    document1_id INT,
+    document1_value NVARCHAR(500),
+    document2_table NVARCHAR(50),
+    document2_id INT,
+    document2_value NVARCHAR(500),
+    severity NVARCHAR(20) DEFAULT 'warning',
+    status NVARCHAR(20) DEFAULT 'open',
+    resolution_notes NTEXT,
+    reviewer_name NVARCHAR(100),
+    reviewed_at DATETIME2,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    FOREIGN KEY (person_id) REFERENCES persons(person_id),
+    FOREIGN KEY (processing_id) REFERENCES processing_sessions(processing_id)
+);
+
+-- Application Logs Table
+IF OBJECT_ID('application_logs', 'U') IS NOT NULL
+    DROP TABLE application_logs;
+
+CREATE TABLE application_logs (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    timestamp DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    level NVARCHAR(10) NOT NULL,
+    logger_name NVARCHAR(100),
+    module NVARCHAR(100),
+    function_name NVARCHAR(100),
+    line_number INT,
+    message NTEXT,
+    processing_id NVARCHAR(50),
+    person_id NVARCHAR(20),
+    user_id NVARCHAR(50),
+    session_id NVARCHAR(100),
+    ip_address NVARCHAR(50),
+    user_agent NTEXT,
+    exception_type NVARCHAR(100),
+    exception_message NTEXT,
+    stack_trace NTEXT,
+    extra_data NTEXT
+);
+
+-- Create indexes for better performance
+CREATE INDEX IX_processing_sessions_id ON processing_sessions(processing_id);
+CREATE INDEX IX_processing_sessions_date ON processing_sessions(processed_at);
+CREATE INDEX IX_processing_sessions_status ON processing_sessions(status);
+
+CREATE INDEX IX_persons_name ON persons(name);
+CREATE INDEX IX_persons_dob ON persons(date_of_birth);
+CREATE INDEX IX_persons_processing_id ON persons(primary_processing_id);
+
+CREATE INDEX IX_uscis_receipt_number ON uscis_forms(receipt_number);
+CREATE INDEX IX_uscis_person_id ON uscis_forms(person_id);
+CREATE INDEX IX_uscis_processing_id ON uscis_forms(processing_id);
+
+CREATE INDEX IX_dol_case_number ON dol_forms(case_number);
+CREATE INDEX IX_dol_person_id ON dol_forms(person_id);
+
+CREATE INDEX IX_i94_admission_number ON i94_records(admission_record_number);
+CREATE INDEX IX_i94_person_id ON i94_records(person_id);
+
+CREATE INDEX IX_passports_number ON passports(passport_number);
+CREATE INDEX IX_passports_person_id ON passports(person_id);
+
+CREATE INDEX IX_visas_number ON visas(visa_number);
+CREATE INDEX IX_visas_person_id ON visas(person_id);
+
+CREATE INDEX IX_inconsistencies_person_id ON data_inconsistencies(person_id);
+CREATE INDEX IX_logs_timestamp ON application_logs(timestamp);
+
+-- Create triggers for data integrity
+CREATE TRIGGER tr_persons_updated_at
+ON persons
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE persons
+    SET updated_at = GETUTCDATE()
+    WHERE person_id IN (SELECT DISTINCT person_id FROM INSERTED);
+END;
+
+-- Views for common queries
+CREATE VIEW vw_person_summary AS
+SELECT
+    p.person_id,
+    p.name,
+    p.date_of_birth,
+    p.country_of_citizenship,
+    p.document_count,
+    p.data_quality_score,
+    p.has_inconsistencies,
+    COUNT(DISTINCT u.id) as uscis_documents,
+    COUNT(DISTINCT d.id) as dol_documents,
+    COUNT(DISTINCT i.id) as i94_records,
+    COUNT(DISTINCT pp.id) as passports,
+    COUNT(DISTINCT v.id) as visas,
+    COUNT(DISTINCT s.id) as supporting_documents
+FROM persons p
+LEFT JOIN uscis_forms u ON p.person_id = u.person_id
+LEFT JOIN dol_forms d ON p.person_id = d.person_id
+LEFT JOIN i94_records i ON p.person_id = i.person_id
+LEFT JOIN passports pp ON p.person_id = pp.person_id
+LEFT JOIN visas v ON p.person_id = v.person_id
+LEFT JOIN supporting_documents s ON p.person_id = s.person_id
+GROUP BY
+    p.person_id, p.name, p.date_of_birth,
+    p.country_of_citizenship, p.document_count,
+    p.data_quality_score, p.has_inconsistencies;
+
+PRINT 'Immigration Document Audit System database schema created successfully!';

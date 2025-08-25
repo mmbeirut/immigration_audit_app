@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Summary - Immigration File Review{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <!-- Header -->
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h2 class="mb-0">
+                    <i class="fas fa-clipboard-list"></i> Immigration File Audit Summary
+                </h2>
+                <small>Processed: {{ results.processed_at }}</small>
+            </div>
+        </div>
+
+        <!-- Executive Summary -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Executive Summary</h5>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>File:</strong> {{ results.file_path }}</p>
+                        <p><strong>Total Pages:</strong> {{ results.processing_summary.file_overview.total_pages }}</p>
+                        <p><strong>People Identified:</strong> {{ results.processing_summary.file_overview.people_identified }}</p>
+
+                        {% if results.processing_summary.file_overview.date_range.earliest %}
+                        <p><strong>Document Date Range:</strong>
+                           {{ results.processing_summary.file_overview.date_range.earliest }} to
+                           {{ results.processing_summary.file_overview.date_range.latest }}
+                        </p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Quality Score</h5>
+                    </div>
+                    <div class="card-body text-center">
+                        {% set error_count = results.validation_errors|length %}
+                        {% set flag_count = results.processing_summary.red_flags|length %}
+                        {% if error_count == 0 and flag_count == 0 %}
+                            <div class="text-success">
+                                <i class="fas fa-check-circle fa-3x"></i>
+                                <h4 class="mt-2">Excellent</h4>
+                                <p class="mb-0">No issues detected</p>
+                            </div>
+                        {% elif flag_count <= 2 %}
+                            <div class="text-warning">
+                                <i class="fas fa-exclamation-triangle fa-3x"></i>
+                                <h4 class="mt-2">Good</h4>
+                                <p class="mb-0">Minor issues noted</p>
+                            </div>
+                        {% else %}
+                            <div class="text-danger">
+                                <i class="fas fa-times-circle fa-3x"></i>
+                                <h4 class="mt-2">Needs Review</h4>
+                                <p class="mb-0">Multiple issues found</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Case Completeness Analysis -->
+        {% if results.processing_summary.completeness_check %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-tasks"></i> Case Completeness Analysis
+                </h5>
+            </div>
+            <div class="card-body">
+                {% for person_key, completeness in results.processing_summary.completeness_check.items() %}
+                <div class="person-completeness mb-4 p-3 border rounded">
+                    <h6 class="text-primary">{{ person_key }}</h6>
+
+                    <!-- Completeness Progress -->
+                    <div class="mb-3">
+                        {% set score = (completeness.completeness_score * 100)|round|int %}
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Case Completeness</span>
+                            <span>{{ score }}%</span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar {% if score >= 80 %}bg-success{% elif score >= 60 %}bg-warning{% else %}bg-danger{% endif %}"
+                                 style="width: {{ score }}%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Document Checklist -->
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Documents Present:</h6>
+                            <ul class="list-unstyled">
+                                {% if completeness.has_petition %}
+                                <li><i class="fas fa-check text-success"></i> Immigration Petition</li>
+                                {% endif %}
+                                {% if completeness.has_labor_cert %}
+                                <li><i class="fas fa-check text-success"></i> Labor Certification</li>
+                                {% endif %}
+                                {% if completeness.has_passport %}
+                                <li><i class="fas fa-check text-success"></i> Passport</li>
+                                {% endif %}
+                                {% if completeness.has_visa %}
+                                <li><i class="fas fa-check text-success"></i> Visa Stamp</li>
+                                {% endif %}
+                                {% if completeness.has_entry_record %}
+                                <li><i class="fas fa-check text-success"></i> Entry Record (I-94)</li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            {% if completeness.missing_documents %}
+                            <h6 class="text-warning">Missing Documents:</h6>
+                            <ul class="list-unstyled">
+                                {% for missing in completeness.missing_documents %}
+                                <li><i class="fas fa-times text-warning"></i> {{ missing }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Detailed Document Analysis -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-file-alt"></i> Detailed Document Analysis
+                </h5>
+            </div>
+            <div class="card-body">
+                {% for doc in results.documents_processed %}
+                <div class="document-analysis mb-4 p-3 border rounded">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="text-primary mb-0">
+                            {{ doc.document_type }}
+                            <small class="text-muted">(Pages: {{ doc.pages|join(', ') }})</small>
+                        </h6>
+                        <span class="badge bg-{% if doc.confidence >= 0.8 %}success{% elif doc.confidence >= 0.6 %}warning{% else %}danger{% endif %}">
+                            {{ (doc.confidence * 100)|round }}% Confidence
+                        </span>
+                    </div>
+
+                    {% if doc.validation_results %}
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <small class="text-success">
+                                <strong>Valid Fields ({{ doc.validation_results.valid_fields|length }}):</strong>
+                                {% for field in doc.validation_results.valid_fields %}
+                                <span class="badge bg-success badge-sm">{{ field }}</span>
+                                {% endfor %}
+                            </small>
+                        </div>
+                        <div class="col-md-6">
+                            {% if doc.validation_results.invalid_fields %}
+                            <small class="text-danger">
+                                <strong>Invalid Fields ({{ doc.validation_results.invalid_fields|length }}):</strong>
+                                {% for field in doc.validation_results.invalid_fields %}
+                                <span class="badge bg-danger badge-sm">{{ field }}</span>
+                                {% endfor %}
+                            </small>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Key Extracted Data -->
+                    {% if doc.extracted_data %}
+                    <div class="extracted-data">
+                        <small><strong>Key Data Extracted:</strong></small>
+                        <div class="row">
+                            {% for key, value in doc.extracted_data.items() %}
+                                {% if value and key not in ['error'] %}
+                                <div class="col-md-6">
+                                    <small>
+                                        <strong>{{ key|replace('_', ' ')|title }}:</strong> {{ value }}
+                                    </small>
+                                </div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Processing Notes -->
+                    {% if doc.processing_notes %}
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <strong>Notes:</strong> {{ doc.processing_notes|join('; ') }}
+                        </small>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Action Items -->
+        <div class="card">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">
+                    <i class="fas fa-clipboard-check"></i> Recommended Next Steps
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if results.processing_summary.recommendations %}
+                <ol>
+                    {% for recommendation in results.processing_summary.recommendations %}
+                    <li>{{ recommendation }}</li>
+                    {% endfor %}
+                </ol>
+                {% else %}
+                <p class="text-success mb-0">
+                    <i class="fas fa-check-circle"></i>
+                    No specific action items identified. File appears to be in good order.
+                </p>
+                {% endif %}
+
+                <hr>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Process Another File
+                    </a>
+                    <button class="btn btn-outline-primary" onclick="window.print()">
+                        <i class="fas fa-print"></i> Print Report
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
