@@ -11,6 +11,7 @@ from typing import List, Dict, Tuple, Optional, Any
 
 import fitz  # PyMuPDF
 import easyocr
+import numpy as np
 from pdf2image import convert_from_path
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
@@ -60,9 +61,9 @@ class DocumentProcessor:
         )
 
     def extract_text_multi_method(self, file_path: str) -> Dict[str, Any]:
-        """Simplified - Azure Form Recognizer only (most reliable)"""
+        """Extract text using Azure Form Recognizer with EasyOCR fallback."""
         import time
-        print(f"=== EXTRACT_TEXT_MULTI_METHOD DEBUG ===")
+        print("=== EXTRACT_TEXT_MULTI_METHOD DEBUG ===")
         print(f"Timestamp: {time.time()}")
         print(f"File path: {file_path}")
         print(f"File exists: {os.path.exists(file_path)}")
@@ -73,18 +74,44 @@ class DocumentProcessor:
 
         file_path = os.path.abspath(file_path)
 
+        all_results: Dict[str, str] = {}
+        method_used = "azure"
+        confidence = 0.0
+
+        # Attempt Azure extraction
         try:
             text = self.extract_text_azure(file_path)
+            all_results["azure"] = text
             print(f"DEBUG: Azure extracted {len(text)} characters")
-            return {
-                'text': text,
-                'method_used': 'azure',
-                'confidence': 0.8 if len(text) > 100 else 0.3,
-                'all_results': {'azure': text}
-            }
         except Exception as e:
             print(f"DEBUG: Azure extraction failed: {e}")
-            return {'text': '', 'method_used': 'failed', 'confidence': 0}
+            text = ""
+
+        # Fallback to EasyOCR if Azure result is empty
+        if not text.strip():
+            method_used = "easyocr"
+            text = self.extract_text_easyocr(file_path)
+            all_results["easyocr"] = text
+            confidence = 0.6 if len(text) > 100 else 0.2
+        else:
+            confidence = 0.8 if len(text) > 100 else 0.3
+
+        return {
+            "text": text,
+            "method_used": method_used,
+            "confidence": confidence,
+            "all_results": all_results,
+        }
+
+    def extract_text_easyocr(self, file_path: str) -> str:
+        """Extract text from each page using EasyOCR."""
+        text = ""
+        images = convert_from_path(file_path)
+        for image in images:
+            result = self.easyocr_reader.readtext(np.array(image))
+            page_text = "\n".join([item[1] for item in result])
+            text += page_text + "\n"
+        return text.strip()
 
     def extract_text_azure(self, file_path: str) -> str:
         """Extract text using Azure Form Recognizer"""
