@@ -1,12 +1,14 @@
 
-old_main.js
-old_main2.js
+BackupFiles/old_main.js
+BackupFiles/old_main2.js
 check_packages.py
 get_os_info.py
 troubleshooting.txt
-models/old_document_processor.py
+BackupFiles/old_document_processor.py
 
 /uploads
+
+/BackupFiles
 
 # Byte-compiled / cache
 __pycache__/
