@@ -230,7 +230,10 @@ class DocumentProcessor:
             print(f"DEBUG: Detected LCA with confidence {confidence}")
 
         # I-94
-        if any(phrase in text_lower for phrase in ['i-94', 'arrival departure', 'admission number']):
+        if (
+            re.search(r'i[-\s]?94', text_lower) or
+            any(phrase in text_lower for phrase in ['arrival departure', 'admission number'])
+        ):
             detections.append(('I94', 0.8))
             print("DEBUG: Detected I-94")
 
