@@ -6,6 +6,8 @@ get_os_info.py
 troubleshooting.txt
 models/old_document_processor.py
 
+/uploads
+
 # Byte-compiled / cache
 __pycache__/
 *.py[cod]
