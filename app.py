@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify
+from werkzeug.exceptions import RequestEntityTooLarge
 from dotenv import load_dotenv
 from logging.handlers import RotatingFileHandler
 
@@ -35,7 +36,8 @@ doc_processor = DocumentProcessor()
 @app.route('/', methods=['GET'])
 def index():
     """Main upload page"""
-    return render_template('upload.html')
+    max_mb = app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)
+    return render_template('upload.html', max_content_length=max_mb)
 
 
 @app.route('/upload', methods=['POST'])
@@ -846,9 +848,10 @@ def debug_system_status():
         return f"System status error: {str(e)}"
 
 
-@app.errorhandler(413)
+@app.errorhandler(RequestEntityTooLarge)
 def too_large(e):
-    flash('File too large. Maximum size is 16MB.', 'error')
+    max_mb = app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)
+    flash(f'File too large. Maximum upload size is {max_mb} MB.', 'error')
     return redirect(url_for('index'))
 
 
