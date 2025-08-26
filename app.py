@@ -7,6 +7,7 @@ from typing import Dict, Any
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify
 from dotenv import load_dotenv
 from logging.handlers import RotatingFileHandler
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from models.document_processor import DocumentProcessor  # Updated to use new processor
 from models.database import DatabaseManager
@@ -848,12 +849,10 @@ def debug_system_status():
         return f"System status error: {str(e)}"
 
 
-@app.errorhandler(413)
+@app.errorhandler(RequestEntityTooLarge)
 def too_large(e):
-    flash(
-        f"File too large. Maximum size is {app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)}MB.",
-        'error'
-    )
+    max_mb = app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)
+    flash(f"File too large. Maximum size is {max_mb}MB.", 'error')
     return redirect(url_for('index'))
 
 
