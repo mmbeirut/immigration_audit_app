@@ -24,14 +24,17 @@
                     </div>
                     <div class="card-body">
                         <p><strong>File:</strong> {{ results.file_path }}</p>
-                        <p><strong>Total Pages:</strong> {{ results.processing_summary.file_overview.total_pages }}</p>
-                        <p><strong>People Identified:</strong> {{ results.processing_summary.file_overview.people_identified }}</p>
+                        {% set file_overview = results.processing_summary.file_overview if results.processing_summary.file_overview else None %}
+                        {% if file_overview %}
+                        <p><strong>Total Pages:</strong> {{ file_overview.total_pages }}</p>
+                        <p><strong>People Identified:</strong> {{ file_overview.people_identified }}</p>
 
-                        {% if results.processing_summary.file_overview.date_range.earliest %}
+                        {% if file_overview.date_range.earliest %}
                         <p><strong>Document Date Range:</strong>
-                           {{ results.processing_summary.file_overview.date_range.earliest }} to
-                           {{ results.processing_summary.file_overview.date_range.latest }}
+                           {{ file_overview.date_range.earliest }} to
+                           {{ file_overview.date_range.latest }}
                         </p>
+                        {% endif %}
                         {% endif %}
                     </div>
                 </div>

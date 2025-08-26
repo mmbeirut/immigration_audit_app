@@ -389,6 +389,17 @@ class DocumentProcessor:
 
         except Exception as e:
             results['validation_errors'].append(f"Processing error: {str(e)}")
+            results['processing_summary'] = {
+                'file_overview': {
+                    'total_pages': 0,
+                    'document_types_found': {},
+                    'people_identified': 0,
+                    'date_range': {'earliest': None, 'latest': None},
+                },
+                'completeness_check': {},
+                'red_flags': [],
+                'recommendations': []
+            }
 
         return results
 

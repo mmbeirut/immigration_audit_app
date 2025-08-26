@@ -16,12 +16,13 @@
             </div>
             <div class="card-body">
                 <!-- Processing Summary -->
+                {% set file_overview = results.processing_summary.file_overview if results.processing_summary.file_overview else None %}
                 <div class="row mb-4">
                     <div class="col-md-3">
                         <div class="card bg-primary text-white">
                             <div class="card-body text-center">
                                 <i class="fas fa-file-alt fa-2x mb-2"></i>
-                                <h4>{{ results.processing_summary.file_overview.total_pages or 'N/A' }}</h4>
+                                <h4>{{ file_overview.total_pages if file_overview else 'N/A' }}</h4>
                                 <p class="mb-0">Total Pages</p>
                             </div>
                         </div>
@@ -30,7 +31,7 @@
                         <div class="card bg-info text-white">
                             <div class="card-body text-center">
                                 <i class="fas fa-users fa-2x mb-2"></i>
-                                <h4>{{ results.processing_summary.file_overview.people_identified or 0 }}</h4>
+                                <h4>{{ file_overview.people_identified if file_overview else 0 }}</h4>
                                 <p class="mb-0">People Identified</p>
                             </div>
                         </div>
@@ -80,14 +81,14 @@
                 {% endif %}
 
                 <!-- Document Types Found -->
-                {% if results.processing_summary.file_overview.document_types_found %}
+                {% if file_overview and file_overview.document_types_found %}
                 <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="mb-0">Document Types Detected</h5>
                     </div>
                     <div class="card-body">
                         <div class="row">
-                            {% for doc_type, count in results.processing_summary.file_overview.document_types_found.items() %}
+                            {% for doc_type, count in file_overview.document_types_found.items() %}
                             <div class="col-md-4 mb-2">
                                 <div class="d-flex justify-content-between">
                                     <span>{{ doc_type }}</span>
