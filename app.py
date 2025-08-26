@@ -19,7 +19,8 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-key-change-in-production')
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+# Allow environment override with default 50MB limit
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv("MAX_CONTENT_LENGTH", 50 * 1024 * 1024))
 
 # Create upload directory
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -35,7 +36,8 @@ doc_processor = DocumentProcessor()
 @app.route('/', methods=['GET'])
 def index():
     """Main upload page"""
-    return render_template('upload.html')
+    max_content_mb = app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)
+    return render_template('upload.html', max_content_mb=max_content_mb)
 
 
 @app.route('/upload', methods=['POST'])
@@ -848,7 +850,10 @@ def debug_system_status():
 
 @app.errorhandler(413)
 def too_large(e):
-    flash('File too large. Maximum size is 16MB.', 'error')
+    flash(
+        f"File too large. Maximum size is {app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)}MB.",
+        'error'
+    )
     return redirect(url_for('index'))
 
 

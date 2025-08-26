@@ -22,7 +22,7 @@
                         </label>
                         <input type="file" class="form-control" name="file" id="file" accept=".pdf" required>
                         <div class="form-text">
-                            Maximum file size: 16MB. Supported format: PDF only.
+                            Maximum file size: {{ max_content_mb }}MB. Supported format: PDF only.
                         </div>
                         <!-- File validation messages will appear here -->
                     </div>
@@ -151,6 +151,11 @@
                         </button>
                     </div>
                 </form>
+
+                <script>
+                    window.MAX_FILE_SIZE_MB = {{ max_content_mb }};
+                    window.MAX_FILE_SIZE = window.MAX_FILE_SIZE_MB * 1024 * 1024;
+                </script>
 
                 <!-- Progress Bar -->
                 <div class="progress mt-3" style="display: none;" id="progressContainer">

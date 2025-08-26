@@ -212,7 +212,10 @@ FORM_RECOGNIZER_KEY=your-form-recognizer-key
 SQL_DRIVER={ODBC Driver 17 for SQL Server}
 SQL_SERVER=your-server-name-or-ip
 SQL_DATABASE=ImmigrationAudit
+MAX_CONTENT_LENGTH=52428800  # 50MB upload limit
 ```
+
+> **Note:** Update your production web server or proxy (e.g., Nginx `client_max_body_size`) to allow uploads up to the configured limit.
 
 ## 🚀 Usage Guide
 
@@ -240,7 +243,7 @@ waitress-serve --host=0.0.0.0 --port=5000 app:app
 #### Single Document Processing
 1. Select **"Single Document Type"** mode
 2. Choose document type or use **"Auto-detect"**
-3. Upload PDF file (max 16MB)
+3. Upload PDF file (max 50MB by default)
 4. Enable validation options
 5. Click **"Process Document"**
 6. Review extracted data and validation results

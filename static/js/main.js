@@ -7,6 +7,9 @@
 document.addEventListener('DOMContentLoaded', () => {
   console.log('Immigration Audit System JS loaded');
 
+  const MAX_FILE_SIZE = window.MAX_FILE_SIZE || 50 * 1024 * 1024;
+  const MAX_FILE_SIZE_MB = window.MAX_FILE_SIZE_MB || 50;
+
   // ---------- helpers ----------
   const $ = (id) => document.getElementById(id);
   const any = (...ids) => ids.map((i) => $(i)).find(Boolean) || null;
@@ -55,8 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput.value = '';
         return;
       }
-      if (file.size > 16 * 1024 * 1024) {
-        alert('File size must be less than 16MB.');
+      if (file.size > MAX_FILE_SIZE) {
+        alert(`File size must be less than ${MAX_FILE_SIZE_MB}MB.`);
         fileInput.value = '';
         return;
       }
@@ -111,9 +114,9 @@ document.addEventListener('DOMContentLoaded', () => {
       alert('Please select a PDF file.');
       return;
     }
-    if (file.size > 16 * 1024 * 1024) {
+    if (file.size > MAX_FILE_SIZE) {
       e.preventDefault();
-      alert('File size must be less than 16MB.');
+      alert(`File size must be less than ${MAX_FILE_SIZE_MB}MB.`);
       return;
     }
 
