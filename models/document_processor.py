@@ -6,7 +6,7 @@ import re
 import time
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Dict, Tuple, Optional, Any
 
 import fitz  # PyMuPDF
@@ -697,8 +697,8 @@ class DocumentProcessor:
             'data': extracted_data
         })
 
-        # Add timeline entry
-        doc_date = (
+        # Add timeline entry with normalized date
+        doc_date_raw = (
                 extracted_data.get('notice_date') or
                 extracted_data.get('issue_date') or
                 extracted_data.get('received_date') or
@@ -707,15 +707,19 @@ class DocumentProcessor:
                 extracted_data.get('expiration_date')
         )
 
-        if doc_date:
+        parsed_doc_date = parse_date_flexible(doc_date_raw)
+
+        if parsed_doc_date:
             person_record['timeline'].append({
-                'date': doc_date,
+                'date': doc_date_raw,
+                'parsed_date': parsed_doc_date,
                 'document': segment_result['document_type'],
                 'event': f"{segment_result['document_type']} processed"
             })
 
-            # Safe sorting that handles None values
-            person_record['timeline'].sort(key=lambda x: x['date'] or '1900-01-01')
+            person_record['timeline'].sort(
+                key=lambda x: x.get('parsed_date') or date.min
+            )
 
         # Check for inconsistencies
         self.check_person_data_consistency(person_record)
@@ -809,23 +813,23 @@ class DocumentProcessor:
 
     def get_document_date_range(self, results: Dict) -> Dict:
         """Get date range of all documents"""
-        all_dates = []
+        all_dates: List[date] = []
 
         for person_data in results['person_records'].values():
             for timeline_entry in person_data['timeline']:
-                if timeline_entry.get('date'):
-                    all_dates.append(timeline_entry['date'])
+                parsed = timeline_entry.get('parsed_date')
+                if not parsed:
+                    parsed = parse_date_flexible(timeline_entry.get('date'))
+                if parsed:
+                    all_dates.append(parsed)
 
-        # Filter out None values and sort
-        valid_dates = [date for date in all_dates if date is not None]
-
-        if not valid_dates:
+        if not all_dates:
             return {'earliest': None, 'latest': None}
 
-        valid_dates.sort()
+        all_dates.sort()
         return {
-            'earliest': valid_dates[0],
-            'latest': valid_dates[-1]
+            'earliest': all_dates[0].isoformat(),
+            'latest': all_dates[-1].isoformat()
         }
 
     def generate_audit_recommendations(self, summary: Dict, results: Dict) -> List[str]:
@@ -1008,16 +1012,18 @@ class DocumentProcessor:
                 }
 
                 # Add timeline entry if date available
-                doc_date = (
+                doc_date_raw = (
                         extracted_data.get('notice_date') or
                         extracted_data.get('issue_date') or
                         extracted_data.get('received_date') or
                         extracted_data.get('arrival_date') or
                         extracted_data.get('expiration_date')
                 )
-                if doc_date:
+                parsed_doc_date = parse_date_flexible(doc_date_raw)
+                if parsed_doc_date:
                     results['person_records'][person_key]['timeline'].append({
-                        'date': doc_date,
+                        'date': doc_date_raw,
+                        'parsed_date': parsed_doc_date,
                         'document': document_type,
                         'event': f"{document_type} processed"
                     })
