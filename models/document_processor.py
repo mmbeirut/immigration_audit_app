@@ -133,6 +133,21 @@ class DocumentProcessor:
                 text += page.get_text() + "\n"
         return text.strip()
 
+    def get_page_text(self, page, page_num: int, min_length: int = 20) -> str:
+        """Get text from a page using PyMuPDF with EasyOCR fallback."""
+        text = page.get_text()
+        if len(text.strip()) < min_length:
+            pix = page.get_pixmap()
+            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+            if pix.n > 3:
+                img = img[:, :, :3]
+            ocr_result = self.easyocr_reader.readtext(img)
+            text = "\n".join([item[1] for item in ocr_result])
+            print(f"DEBUG: Page {page_num + 1} text extracted using EasyOCR")
+        else:
+            print(f"DEBUG: Page {page_num + 1} text extracted using PyMuPDF")
+        return text
+
     def analyze_pdf_by_pages(self, file_path: str) -> List[DocumentSegment]:
         """Break PDF into logical document segments"""
         segments = []
@@ -143,7 +158,7 @@ class DocumentProcessor:
             # First pass: analyze each page
             for page_num in range(len(pdf)):
                 page = pdf[page_num]
-                page_text = page.get_text()
+                page_text = self.get_page_text(page, page_num)
 
                 detected_types = self.detect_document_types_on_page(page_text)
 
