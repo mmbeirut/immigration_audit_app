@@ -292,10 +292,12 @@ For each document:
 
 1. **Update Document Detection** (`models/document_processor.py`):
    ```python
-   def detect_document_types_on_page(self, page_text: str):
+   def detect_document_types_on_page(self, page_text: str, ocr_used: bool = False):
        # Add detection logic for new document type
        if 'new_document_indicator' in text_lower:
            detections.append(('NEW_DOC_TYPE', 0.85))
+       diagnostics['indicators_checked']['NEW_DOC_TYPE'] = [...]  # optional
+       return detections, diagnostics
    ```
 
 2. **Create Extraction Prompt** (`models/validators.py`):

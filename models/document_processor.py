@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 import json
+import logging
 from datetime import datetime, date
 from typing import List, Dict, Tuple, Optional, Any
 
@@ -19,6 +20,9 @@ from openai import AzureOpenAI
 from ratelimit import limits, sleep_and_retry
 
 from .validators import *
+
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentSegment:
@@ -133,39 +137,59 @@ class DocumentProcessor:
                 text += page.get_text() + "\n"
         return text.strip()
 
-    def analyze_pdf_by_pages(self, file_path: str) -> List[DocumentSegment]:
+    def analyze_pdf_by_pages(self, file_path: str) -> Tuple[List[DocumentSegment], List[Dict]]:
         """Break PDF into logical document segments"""
-        segments = []
+        segments: List[DocumentSegment] = []
 
         with fitz.open(file_path) as pdf:
-            page_analyses = []
+            page_analyses: List[Dict] = []
 
             # First pass: analyze each page
             for page_num in range(len(pdf)):
                 page = pdf[page_num]
                 page_text = page.get_text()
 
-                detected_types = self.detect_document_types_on_page(page_text)
+                detected_types, diagnostics = self.detect_document_types_on_page(page_text)
+
+                if not detected_types:
+                    logger.debug(
+                        "No document types detected on page %s: %s",
+                        page_num,
+                        diagnostics,
+                    )
 
                 page_analyses.append({
                     'page_num': page_num,
                     'text': page_text,
                     'detected_types': detected_types,
+                    'diagnostics': diagnostics,
                     'is_continuation': self.is_continuation_page(page_text)
                 })
 
             # Second pass: group pages into document segments
             segments = self.group_pages_into_documents(page_analyses)
 
-        return segments
+        page_diagnostics = [
+            {
+                'page_num': analysis['page_num'],
+                'detected_types': analysis['detected_types'],
+                'diagnostics': analysis['diagnostics'],
+            }
+            for analysis in page_analyses
+        ]
 
-    def detect_document_types_on_page(self, page_text: str) -> List[Tuple[str, float]]:
+        return segments, page_diagnostics
+
+    def detect_document_types_on_page(
+        self, page_text: str, ocr_used: bool = False
+    ) -> Tuple[List[Tuple[str, float]], Dict[str, Any]]:
         """Detect multiple document types on a single page - ENHANCED VERSION"""
         text_lower = page_text.lower()
         text_upper = page_text.upper()
-        detections = []
+        detections: List[Tuple[str, float]] = []
+        indicators: Dict[str, Any] = {}
 
-        print(f"DEBUG: Analyzing page text for document type detection...")
+        print("DEBUG: Analyzing page text for document type detection...")
         print(f"DEBUG: First 200 chars: {page_text[:200]}")
 
         # I-797 Notice of Action - Enhanced detection (includes I-140 approvals)
@@ -181,7 +205,7 @@ class DocumentProcessor:
             bool(re.search(r'receipt number.*[A-Z]{3}\d{10}', page_text, re.IGNORECASE)),
             ('approval notice' in text_lower and any(case in text_lower for case in ['i-140', 'i-129']))
         ]
-
+        indicators['I797'] = i797_indicators
         if any(i797_indicators):
             confidence = 0.9
             if re.search(r'receipt number.*[A-Z]{3}\d{10}', page_text, re.IGNORECASE):
@@ -194,10 +218,13 @@ class DocumentProcessor:
             ('i-797c' in text_lower or '1-797c' in text_lower),
             ('notice of action' in text_lower and 'receipt' in text_lower),
             ('receipt notice' in text_lower),
-            ('receipt number' in text_lower and any(
-                case in text_lower for case in ['i-140', 'i-129']) and 'approval' not in text_lower)
+            (
+                'receipt number' in text_lower
+                and any(case in text_lower for case in ['i-140', 'i-129'])
+                and 'approval' not in text_lower
+            ),
         ]
-
+        indicators['I797C'] = i797c_indicators
         if any(i797c_indicators):
             confidence = 0.85
             if re.search(r'receipt number.*[A-Z]{3}\d{10}', page_text, re.IGNORECASE):
@@ -206,69 +233,113 @@ class DocumentProcessor:
             print(f"DEBUG: Detected I-797C with confidence {confidence}")
 
         # I-129 Petition (standalone petitions, not notices)
-        if 'i-129' in text_lower and 'petition for a nonimmigrant worker' in text_lower and 'notice of action' not in text_lower:
+        i129_indicators = [
+            'i-129' in text_lower,
+            'petition for a nonimmigrant worker' in text_lower,
+            'notice of action' not in text_lower,
+        ]
+        indicators['I129'] = i129_indicators
+        if all(i129_indicators):
             detections.append(('I129', 0.85))
             print("DEBUG: Detected I-129")
 
         # Labor Certification (PERM) - 9089
-        if any(phrase in text_lower for phrase in ['labor certification', 'form 9089', 'perm']):
+        perm_indicators = [
+            phrase in text_lower for phrase in ['labor certification', 'form 9089', 'perm']
+        ]
+        indicators['PERM'] = perm_indicators
+        if any(perm_indicators):
             detections.append(('PERM', 0.9))
             print("DEBUG: Detected PERM")
 
         # Prevailing Wage Determination - 9141
-        if any(phrase in text_lower for phrase in ['prevailing wage', 'form 9141', 'pwd']):
+        pwd_indicators = [
+            phrase in text_lower for phrase in ['prevailing wage', 'form 9141', 'pwd']
+        ]
+        indicators['PWD'] = pwd_indicators
+        if any(pwd_indicators):
             detections.append(('PWD', 0.85))
             print("DEBUG: Detected PWD")
 
         # LCA Form 9035
-        if any(phrase in text_lower for phrase in
-               ['eta-9035', 'eta 9035', 'labor condition application', 'lca', 'form 9035']):
+        lca_phrases = [
+            phrase in text_lower
+            for phrase in ['eta-9035', 'eta 9035', 'labor condition application', 'lca', 'form 9035']
+        ]
+        lca_dol = 'department of labor' in text_lower
+        indicators['LCA'] = lca_phrases + [lca_dol]
+        if any(lca_phrases):
             confidence = 0.9
-            if 'department of labor' in text_lower:
+            if lca_dol:
                 confidence = 0.95
             detections.append(('LCA', confidence))
             print(f"DEBUG: Detected LCA with confidence {confidence}")
 
         # I-94
-        if (
-            re.search(r'i[-\s]?94', text_lower) or
-            any(phrase in text_lower for phrase in ['arrival departure', 'admission number'])
-        ):
+        i94_indicators = [
+            bool(re.search(r'i[-\s]?94', text_lower)),
+            any(phrase in text_lower for phrase in ['arrival departure', 'admission number']),
+        ]
+        indicators['I94'] = i94_indicators
+        if any(i94_indicators):
             detections.append(('I94', 0.8))
             print("DEBUG: Detected I-94")
 
         # EAD (Employment Authorization Document)
-        if any(phrase in text_lower for phrase in ['employment authorization', 'ead', 'work permit', 'i-766']):
+        ead_phrase = any(
+            phrase in text_lower for phrase in ['employment authorization', 'ead', 'work permit', 'i-766']
+        )
+        ead_number = bool(re.search(r'uscis number.*[A-Z0-9]{9,}', page_text, re.IGNORECASE))
+        indicators['EAD'] = [ead_phrase, ead_number]
+        if ead_phrase:
             confidence = 0.85
-            if re.search(r'uscis number.*[A-Z0-9]{9,}', page_text, re.IGNORECASE):
+            if ead_number:
                 confidence = 0.9
             detections.append(('EAD', confidence))
             print(f"DEBUG: Detected EAD with confidence {confidence}")
 
         # Green Card (Permanent Resident Card)
-        if any(phrase in text_lower for phrase in ['permanent resident card', 'green card', 'i-551']):
+        gc_phrase = any(
+            phrase in text_lower for phrase in ['permanent resident card', 'green card', 'i-551']
+        )
+        gc_number = bool(re.search(r'uscis.*[A-Z0-9]{9,}', page_text, re.IGNORECASE))
+        indicators['GREEN_CARD'] = [gc_phrase, gc_number]
+        if gc_phrase:
             confidence = 0.9
-            if re.search(r'uscis.*[A-Z0-9]{9,}', page_text, re.IGNORECASE):
+            if gc_number:
                 confidence = 0.95
             detections.append(('GREEN_CARD', confidence))
             print(f"DEBUG: Detected Green Card with confidence {confidence}")
 
         # Passport
-        if re.search(r'passport.*united states|type.*p\b', page_text, re.IGNORECASE):
+        us_passport = bool(re.search(r'passport.*united states|type.*p\b', page_text, re.IGNORECASE))
+        foreign_passport = 'passport' in text_lower
+        indicators['US_PASSPORT'] = [us_passport]
+        indicators['FOREIGN_PASSPORT'] = [foreign_passport]
+        if us_passport:
             detections.append(('US_PASSPORT', 0.8))
             print("DEBUG: Detected US Passport")
-        elif 'passport' in text_lower:
+        elif foreign_passport:
             detections.append(('FOREIGN_PASSPORT', 0.7))
             print("DEBUG: Detected Foreign Passport")
 
         # Visa stamp
-        if any(phrase in text_lower for phrase in ['visa', 'embassy', 'consulate']) and \
-                any(phrase in text_lower for phrase in ['immigrant', 'nonimmigrant']):
+        visa_indicators = [
+            any(phrase in text_lower for phrase in ['visa', 'embassy', 'consulate']),
+            any(phrase in text_lower for phrase in ['immigrant', 'nonimmigrant']),
+        ]
+        indicators['VISA_STAMP'] = visa_indicators
+        if all(visa_indicators):
             detections.append(('VISA_STAMP', 0.8))
             print("DEBUG: Detected Visa Stamp")
 
         print(f"DEBUG: Final detections: {detections}")
-        return sorted(detections, key=lambda x: x[1], reverse=True)
+        diagnostics = {
+            'page_length': len(page_text),
+            'ocr_used': ocr_used,
+            'indicators_checked': indicators,
+        }
+        return sorted(detections, key=lambda x: x[1], reverse=True), diagnostics
 
     def is_continuation_page(self, page_text: str) -> bool:
         """Determine if page is continuation of previous document"""
@@ -373,8 +444,10 @@ class DocumentProcessor:
 
         try:
             # Segment the file
-            segments = self.analyze_pdf_by_pages(file_path)
+            segments, page_diagnostics = self.analyze_pdf_by_pages(file_path)
             results['segments_found'] = len(segments)
+            if options.get('include_page_diagnostics'):
+                results['page_diagnostics'] = page_diagnostics
 
             # Process each segment
             for segment in segments:
@@ -876,7 +949,7 @@ class DocumentProcessor:
             # Extract data based on document type
             if document_type == 'auto':
                 print("DEBUG: Auto-detecting document type...")
-                segments = self.analyze_pdf_by_pages(file_path)
+                segments, _ = self.analyze_pdf_by_pages(file_path)
                 if segments:
                     document_type = segments[0].doc_type
                     text = segments[0].text
