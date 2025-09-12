@@ -1,0 +1,10 @@
+# Prefer our current branch on these file types during merges
+*.lock       merge=ours
+*.snap       merge=ours
+package-lock.json merge=ours
+yarn.lock    merge=ours
+pnpm-lock.yaml merge=ours
+*.pbxproj    merge=ours
+
+# Combine both sides line-by-line (nice for JSON-y lists or .env templates)
+*.env.example merge=union
