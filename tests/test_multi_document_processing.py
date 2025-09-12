@@ -88,7 +88,6 @@ from models.document_processor import DocumentProcessor, DocumentSegment
 
 
 # ---------- Helpers ----------
-
 def create_sample_pdf(tmp_path):
     """Create a tiny placeholder PDF file."""
     pdf_path = tmp_path / 'sample.pdf'
@@ -97,7 +96,6 @@ def create_sample_pdf(tmp_path):
 
 
 # ---------- Tests (version A: stubbing process_document_segment) ----------
-
 def test_multi_document_processing(tmp_path):
     pdf_path = create_sample_pdf(tmp_path)
 
@@ -142,7 +140,6 @@ def test_multi_document_processing(tmp_path):
 
 
 # ---------- Tests (version B: stubbing extract_with_llm) ----------
-
 @pytest.fixture
 def sample_pdf(tmp_path):
     path = tmp_path / "sample.pdf"
