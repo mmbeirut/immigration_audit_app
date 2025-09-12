@@ -467,7 +467,7 @@ def debug_text_extraction():
         extraction_result = doc_processor.extract_text_multi_method(file_path)
 
         # Test document type detection
-        segments = doc_processor.analyze_pdf_by_pages(file_path)
+        segments, _ = doc_processor.analyze_pdf_by_pages(file_path)
 
         html = f"""
         <h2>Text Extraction Debug</h2>
@@ -630,7 +630,7 @@ def debug_document_detection():
         text = extraction_result.get('text', '')
 
         # Test document detection
-        segments = doc_processor.analyze_pdf_by_pages(file_path)
+        segments, _ = doc_processor.analyze_pdf_by_pages(file_path)
 
         html = f"""
         <h2>Document Detection Debug</h2>

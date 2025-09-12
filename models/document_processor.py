@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 import json
+import logging
 from datetime import datetime, date
 from typing import List, Dict, Tuple, Optional, Any
 
@@ -19,6 +20,9 @@ from openai import AzureOpenAI
 from ratelimit import limits, sleep_and_retry
 
 from .validators import *
+
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentSegment:
@@ -148,39 +152,59 @@ class DocumentProcessor:
             print(f"DEBUG: Page {page_num + 1} text extracted using PyMuPDF")
         return text
 
-    def analyze_pdf_by_pages(self, file_path: str) -> List[DocumentSegment]:
-        """Break PDF into logical document segments"""
-        segments = []
+    def analyze_pdf_by_pages(self, file_path: str) -> Tuple[List[DocumentSegment], List[Dict]]:
+        """Break PDF into logical document segments (returns segments + per-page diagnostics)."""
+        segments: List[DocumentSegment] = []
 
         with fitz.open(file_path) as pdf:
-            page_analyses = []
+            page_analyses: List[Dict] = []
 
             # First pass: analyze each page
             for page_num in range(len(pdf)):
                 page = pdf[page_num]
                 page_text = self.get_page_text(page, page_num)
 
-                detected_types = self.detect_document_types_on_page(page_text)
+                detected_types, diagnostics = self.detect_document_types_on_page(page_text)
+
+                if not detected_types:
+                    logger.debug(
+                        "No document types detected on page %s: %s",
+                        page_num,
+                        diagnostics,
+                    )
 
                 page_analyses.append({
                     'page_num': page_num,
                     'text': page_text,
                     'detected_types': detected_types,
+                    'diagnostics': diagnostics,
                     'is_continuation': self.is_continuation_page(page_text)
                 })
 
             # Second pass: group pages into document segments
             segments = self.group_pages_into_documents(page_analyses)
 
-        return segments
+        page_diagnostics = [
+            {
+                'page_num': analysis['page_num'],
+                'detected_types': analysis['detected_types'],
+                'diagnostics': analysis['diagnostics'],
+            }
+            for analysis in page_analyses
+        ]
 
-    def detect_document_types_on_page(self, page_text: str) -> List[Tuple[str, float]]:
+        return segments, page_diagnostics
+
+    def detect_document_types_on_page(
+        self, page_text: str, ocr_used: bool = False
+    ) -> Tuple[List[Tuple[str, float]], Dict[str, Any]]:
         """Detect multiple document types on a single page - ENHANCED VERSION"""
         text_lower = page_text.lower()
         text_upper = page_text.upper()
-        detections = []
+        detections: List[Tuple[str, float]] = []
+        indicators: Dict[str, Any] = {}
 
-        print(f"DEBUG: Analyzing page text for document type detection...")
+        print("DEBUG: Analyzing page text for document type detection...")
         print(f"DEBUG: First 200 chars: {page_text[:200]}")
 
         # I-797 Notice of Action - Enhanced detection (includes I-140 approvals)
@@ -196,7 +220,7 @@ class DocumentProcessor:
             bool(re.search(r'receipt number.*[A-Z]{3}\d{10}', page_text, re.IGNORECASE)),
             ('approval notice' in text_lower and any(case in text_lower for case in ['i-140', 'i-129']))
         ]
-
+        indicators['I797'] = i797_indicators
         if any(i797_indicators):
             confidence = 0.9
             if re.search(r'receipt number.*[A-Z]{3}\d{10}', page_text, re.IGNORECASE):
@@ -209,10 +233,13 @@ class DocumentProcessor:
             ('i-797c' in text_lower or '1-797c' in text_lower),
             ('notice of action' in text_lower and 'receipt' in text_lower),
             ('receipt notice' in text_lower),
-            ('receipt number' in text_lower and any(
-                case in text_lower for case in ['i-140', 'i-129']) and 'approval' not in text_lower)
+            (
+                'receipt number' in text_lower
+                and any(case in text_lower for case in ['i-140', 'i-129'])
+                and 'approval' not in text_lower
+            ),
         ]
-
+        indicators['I797C'] = i797c_indicators
         if any(i797c_indicators):
             confidence = 0.85
             if re.search(r'receipt number.*[A-Z]{3}\d{10}', page_text, re.IGNORECASE):
@@ -221,69 +248,113 @@ class DocumentProcessor:
             print(f"DEBUG: Detected I-797C with confidence {confidence}")
 
         # I-129 Petition (standalone petitions, not notices)
-        if 'i-129' in text_lower and 'petition for a nonimmigrant worker' in text_lower and 'notice of action' not in text_lower:
+        i129_indicators = [
+            'i-129' in text_lower,
+            'petition for a nonimmigrant worker' in text_lower,
+            'notice of action' not in text_lower,
+        ]
+        indicators['I129'] = i129_indicators
+        if all(i129_indicators):
             detections.append(('I129', 0.85))
             print("DEBUG: Detected I-129")
 
         # Labor Certification (PERM) - 9089
-        if any(phrase in text_lower for phrase in ['labor certification', 'form 9089', 'perm']):
+        perm_indicators = [
+            phrase in text_lower for phrase in ['labor certification', 'form 9089', 'perm']
+        ]
+        indicators['PERM'] = perm_indicators
+        if any(perm_indicators):
             detections.append(('PERM', 0.9))
             print("DEBUG: Detected PERM")
 
         # Prevailing Wage Determination - 9141
-        if any(phrase in text_lower for phrase in ['prevailing wage', 'form 9141', 'pwd']):
+        pwd_indicators = [
+            phrase in text_lower for phrase in ['prevailing wage', 'form 9141', 'pwd']
+        ]
+        indicators['PWD'] = pwd_indicators
+        if any(pwd_indicators):
             detections.append(('PWD', 0.85))
             print("DEBUG: Detected PWD")
 
         # LCA Form 9035
-        if any(phrase in text_lower for phrase in
-               ['eta-9035', 'eta 9035', 'labor condition application', 'lca', 'form 9035']):
+        lca_phrases = [
+            phrase in text_lower
+            for phrase in ['eta-9035', 'eta 9035', 'labor condition application', 'lca', 'form 9035']
+        ]
+        lca_dol = 'department of labor' in text_lower
+        indicators['LCA'] = lca_phrases + [lca_dol]
+        if any(lca_phrases):
             confidence = 0.9
-            if 'department of labor' in text_lower:
+            if lca_dol:
                 confidence = 0.95
             detections.append(('LCA', confidence))
             print(f"DEBUG: Detected LCA with confidence {confidence}")
 
         # I-94
-        if (
-            re.search(r'i[-\s]?94', text_lower) or
-            any(phrase in text_lower for phrase in ['arrival departure', 'admission number'])
-        ):
+        i94_indicators = [
+            bool(re.search(r'i[-\s]?94', text_lower)),
+            any(phrase in text_lower for phrase in ['arrival departure', 'admission number']),
+        ]
+        indicators['I94'] = i94_indicators
+        if any(i94_indicators):
             detections.append(('I94', 0.8))
             print("DEBUG: Detected I-94")
 
         # EAD (Employment Authorization Document)
-        if any(phrase in text_lower for phrase in ['employment authorization', 'ead', 'work permit', 'i-766']):
+        ead_phrase = any(
+            phrase in text_lower for phrase in ['employment authorization', 'ead', 'work permit', 'i-766']
+        )
+        ead_number = bool(re.search(r'uscis number.*[A-Z0-9]{9,}', page_text, re.IGNORECASE))
+        indicators['EAD'] = [ead_phrase, ead_number]
+        if ead_phrase:
             confidence = 0.85
-            if re.search(r'uscis number.*[A-Z0-9]{9,}', page_text, re.IGNORECASE):
+            if ead_number:
                 confidence = 0.9
             detections.append(('EAD', confidence))
             print(f"DEBUG: Detected EAD with confidence {confidence}")
 
         # Green Card (Permanent Resident Card)
-        if any(phrase in text_lower for phrase in ['permanent resident card', 'green card', 'i-551']):
+        gc_phrase = any(
+            phrase in text_lower for phrase in ['permanent resident card', 'green card', 'i-551']
+        )
+        gc_number = bool(re.search(r'uscis.*[A-Z0-9]{9,}', page_text, re.IGNORECASE))
+        indicators['GREEN_CARD'] = [gc_phrase, gc_number]
+        if gc_phrase:
             confidence = 0.9
-            if re.search(r'uscis.*[A-Z0-9]{9,}', page_text, re.IGNORECASE):
+            if gc_number:
                 confidence = 0.95
             detections.append(('GREEN_CARD', confidence))
             print(f"DEBUG: Detected Green Card with confidence {confidence}")
 
         # Passport
-        if re.search(r'passport.*united states|type.*p\b', page_text, re.IGNORECASE):
+        us_passport = bool(re.search(r'passport.*united states|type.*p\b', page_text, re.IGNORECASE))
+        foreign_passport = 'passport' in text_lower
+        indicators['US_PASSPORT'] = [us_passport]
+        indicators['FOREIGN_PASSPORT'] = [foreign_passport]
+        if us_passport:
             detections.append(('US_PASSPORT', 0.8))
             print("DEBUG: Detected US Passport")
-        elif 'passport' in text_lower:
+        elif foreign_passport:
             detections.append(('FOREIGN_PASSPORT', 0.7))
             print("DEBUG: Detected Foreign Passport")
 
         # Visa stamp
-        if any(phrase in text_lower for phrase in ['visa', 'embassy', 'consulate']) and \
-                any(phrase in text_lower for phrase in ['immigrant', 'nonimmigrant']):
+        visa_indicators = [
+            any(phrase in text_lower for phrase in ['visa', 'embassy', 'consulate']),
+            any(phrase in text_lower for phrase in ['immigrant', 'nonimmigrant']),
+        ]
+        indicators['VISA_STAMP'] = visa_indicators
+        if all(visa_indicators):
             detections.append(('VISA_STAMP', 0.8))
             print("DEBUG: Detected Visa Stamp")
 
         print(f"DEBUG: Final detections: {detections}")
-        return sorted(detections, key=lambda x: x[1], reverse=True)
+        diagnostics = {
+            'page_length': len(page_text),
+            'ocr_used': ocr_used,
+            'indicators_checked': indicators,
+        }
+        return sorted(detections, key=lambda x: x[1], reverse=True), diagnostics
 
     def is_continuation_page(self, page_text: str) -> bool:
         """Determine if page is continuation of previous document"""
@@ -388,8 +459,10 @@ class DocumentProcessor:
 
         try:
             # Segment the file
-            segments = self.analyze_pdf_by_pages(file_path)
+            segments, page_diagnostics = self.analyze_pdf_by_pages(file_path)
             results['segments_found'] = len(segments)
+            if options.get('include_page_diagnostics'):
+                results['page_diagnostics'] = page_diagnostics
 
             # Process each segment
             for segment in segments:
@@ -576,11 +649,11 @@ class DocumentProcessor:
         # Clean the content - remove markdown code blocks
         content = content.strip()
         if content.startswith('```json'):
-            content = content[7:]  # Remove ```json
+            content = content[7:]
         if content.startswith('```'):
-            content = content[3:]  # Remove ```
+            content = content[3:]
         if content.endswith('```'):
-            content = content[:-3]  # Remove trailing ```
+            content = content[:-3]
 
         content = content.strip()
         print(f"DEBUG: Cleaned content: {content[:200]}...")
@@ -599,7 +672,7 @@ class DocumentProcessor:
         lines = [line.strip() for line in content.split('\n') if line.strip()]
 
         for line in lines:
-            # Match **Field:** value or Field: value - FIXED REGEX
+            # Match **Field:** value or Field: value
             match = re.match(r'^\*\*(.+?)\*\*:\s*(.+)', line)
             if not match:
                 match = re.match(r'^(.+?):\s*(.+)', line)
@@ -607,7 +680,6 @@ class DocumentProcessor:
             if match:
                 key = match.group(1).strip().lower().replace(' ', '_')
                 value = match.group(2).strip()
-                # Clean up quotes and commas
                 value = value.strip('"').strip("'").rstrip(',')
                 if value and value != 'null' and value != 'N/A':
                     data[key] = value
@@ -627,7 +699,6 @@ class DocumentProcessor:
 
         # Try different field combinations based on document type
         if document_type == 'I94':
-            # I-94 documents use first_name + last_name or surname + given_name
             first = (extracted_data.get('first_name') or
                      extracted_data.get('first_given_name') or
                      extracted_data.get('given_name', '')).strip()
@@ -642,40 +713,34 @@ class DocumentProcessor:
                 person_name = last
 
         elif document_type in ['I797', 'I797C']:
-            # USCIS forms use beneficiary
             person_name = extracted_data.get('beneficiary')
 
         elif document_type == 'I129':
-            # I-129 uses given_name + family_name
             given = extracted_data.get('given_name') or extracted_data.get('given_name_first_name', '')
             family = extracted_data.get('family_name') or extracted_data.get('family_name_last_name', '')
             if given and family:
                 person_name = f"{given} {family}"
 
         elif document_type in ['EAD', 'GREEN_CARD']:
-            # EAD and Green Card use full_name
             person_name = extracted_data.get('full_name')
 
         elif document_type in ['US_PASSPORT', 'FOREIGN_PASSPORT']:
-            # Passports use holder_name
             person_name = extracted_data.get('holder_name')
 
         elif document_type == 'VISA_STAMP':
-            # Visa stamps use given_name + surname
             given = extracted_data.get('given_name', '')
             surname = extracted_data.get('surname', '')
             if given and surname:
                 person_name = f"{given} {surname}"
 
-        # Fallback to generic extraction
         if not person_name:
             person_name = (
-                    extracted_data.get('beneficiary') or
-                    extracted_data.get('full_name') or
-                    extracted_data.get('holder_name') or
-                    f"{extracted_data.get('first_name', '')} {extracted_data.get('last_name', '')}".strip() or
-                    f"{extracted_data.get('given_name', '')} {extracted_data.get('surname', '')}".strip() or
-                    None
+                extracted_data.get('beneficiary') or
+                extracted_data.get('full_name') or
+                extracted_data.get('holder_name') or
+                f"{extracted_data.get('first_name', '')} {extracted_data.get('last_name', '')}".strip() or
+                f"{extracted_data.get('given_name', '')} {extracted_data.get('surname', '')}".strip() or
+                None
             )
 
         dob = (extracted_data.get('date_of_birth') or
@@ -690,7 +755,6 @@ class DocumentProcessor:
             print("DEBUG: No person name found, skipping person record creation")
             return
 
-        # Create person key
         person_key = f"{person_name}_{dob}" if dob else person_name
 
         if person_key not in person_records:
@@ -705,21 +769,19 @@ class DocumentProcessor:
 
         person_record = person_records[person_key]
 
-        # Add document
         person_record['documents'].append({
             'type': segment_result['document_type'],
             'pages': segment_result['pages'],
             'data': extracted_data
         })
 
-        # Add timeline entry with normalized date
         doc_date_raw = (
-                extracted_data.get('notice_date') or
-                extracted_data.get('issue_date') or
-                extracted_data.get('received_date') or
-                extracted_data.get('arrival_date') or
-                extracted_data.get('arrivalissued_date') or
-                extracted_data.get('expiration_date')
+            extracted_data.get('notice_date') or
+            extracted_data.get('issue_date') or
+            extracted_data.get('received_date') or
+            extracted_data.get('arrival_date') or
+            extracted_data.get('arrivalissued_date') or
+            extracted_data.get('expiration_date')
         )
 
         parsed_doc_date = parse_date_flexible(doc_date_raw)
@@ -736,7 +798,6 @@ class DocumentProcessor:
                 key=lambda x: x.get('parsed_date') or date.min
             )
 
-        # Check for inconsistencies
         self.check_person_data_consistency(person_record)
 
         print(f"DEBUG: Updated person record: {person_record}")
@@ -803,25 +864,21 @@ class DocumentProcessor:
             'recommendations': []
         }
 
-        # Count document types
         for doc in results['documents_processed']:
             doc_type = doc['document_type']
             summary['file_overview']['document_types_found'][doc_type] = \
                 summary['file_overview']['document_types_found'].get(doc_type, 0) + 1
 
-        # Check completeness for each person
         for person_key, person_data in results['person_records'].items():
             completeness = check_case_completeness(person_data)
             summary['completeness_check'][person_key] = completeness
 
-            # Add red flags
             if person_data['inconsistencies']:
                 summary['red_flags'].extend([
                     f"{person_key}: {inconsistency}"
                     for inconsistency in person_data['inconsistencies']
                 ])
 
-        # Generate recommendations
         summary['recommendations'] = self.generate_audit_recommendations(summary, results)
 
         return summary
@@ -851,14 +908,12 @@ class DocumentProcessor:
         """Generate audit recommendations"""
         recommendations = []
 
-        # Missing documents
         for person_key, completeness in summary['completeness_check'].items():
             if completeness.get('missing_documents'):
                 recommendations.append(
                     f"{person_key}: Consider obtaining {', '.join(completeness['missing_documents'])}"
                 )
 
-        # Data quality issues
         if summary['red_flags']:
             recommendations.append("Review flagged data inconsistencies before proceeding")
 
@@ -883,22 +938,19 @@ class DocumentProcessor:
         print(f"DEBUG: Processing single document, type: {document_type}")
 
         try:
-            # Extract text
             extraction_result = self.extract_text_multi_method(file_path)
             text = extraction_result['text']
             print(f"DEBUG: Extracted text length: {len(text)}")
 
-            # Extract data based on document type
             if document_type == 'auto':
                 print("DEBUG: Auto-detecting document type...")
-                segments = self.analyze_pdf_by_pages(file_path)
+                segments, _ = self.analyze_pdf_by_pages(file_path)
                 if segments:
                     document_type = segments[0].doc_type
                     text = segments[0].text
                     results['document_type'] = document_type
                     print(f"DEBUG: Auto-detected document type: {document_type}")
 
-            # Process based on type
             print(f"DEBUG: Processing document as type: {document_type}")
             if document_type in ['I797', 'I797C']:
                 results['extracted_data'] = self.extract_uscis_form_data(text)
@@ -923,13 +975,11 @@ class DocumentProcessor:
 
             print(f"DEBUG: Final extracted data: {results['extracted_data']}")
 
-            # Validate if requested
             if options.get('validate_fields', True):
                 results['validation_results'] = validate_segment_data(
                     results['extracted_data'], document_type
                 )
 
-            # Create documents_processed entry
             results['documents_processed'] = [{
                 'pages': [0],
                 'document_type': document_type,
@@ -939,15 +989,10 @@ class DocumentProcessor:
                 'processing_notes': results['processing_notes']
             }]
 
-            # Create person records using enhanced logic
             extracted_data = results['extracted_data']
 
-            # Enhanced person name extraction for different document types
             person_name = None
-
-            # Try different field combinations based on document type
             if document_type == 'I94':
-                # I-94 documents use first_name + last_name or similar combinations
                 first = (extracted_data.get('first_name') or
                          extracted_data.get('first_given_name') or
                          extracted_data.get('given_name', '')).strip()
@@ -962,44 +1007,37 @@ class DocumentProcessor:
                     person_name = last
 
             elif document_type in ['I797', 'I797C']:
-                # USCIS forms use beneficiary
                 person_name = extracted_data.get('beneficiary')
 
             elif document_type == 'I129':
-                # I-129 uses given_name + family_name
                 given = extracted_data.get('given_name') or extracted_data.get('given_name_first_name', '')
                 family = extracted_data.get('family_name') or extracted_data.get('family_name_last_name', '')
                 if given and family:
                     person_name = f"{given} {family}"
 
             elif document_type in ['EAD', 'GREEN_CARD']:
-                # EAD and Green Card use full_name
                 person_name = extracted_data.get('full_name')
 
             elif document_type in ['US_PASSPORT', 'FOREIGN_PASSPORT']:
-                # Passports use holder_name
                 person_name = extracted_data.get('holder_name')
 
             elif document_type == 'VISA_STAMP':
-                # Visa stamps use given_name + surname
                 given = extracted_data.get('given_name', '')
                 surname = extracted_data.get('surname', '')
                 if given and surname:
                     person_name = f"{given} {surname}"
 
-            # Fallback to generic extraction
             if not person_name:
                 person_name = (
-                        extracted_data.get('beneficiary') or
-                        extracted_data.get('full_name') or
-                        extracted_data.get('holder_name') or
-                        f"{extracted_data.get('first_name', '')} {extracted_data.get('last_name', '')}".strip() or
-                        f"{extracted_data.get('given_name', '')} {extracted_data.get('surname', '')}".strip() or
-                        None
+                    extracted_data.get('beneficiary') or
+                    extracted_data.get('full_name') or
+                    extracted_data.get('holder_name') or
+                    f"{extracted_data.get('first_name', '')} {extracted_data.get('last_name', '')}".strip() or
+                    f"{extracted_data.get('given_name', '')} {extracted_data.get('surname', '')}".strip() or
+                    None
                 )
 
-            # Debug the extraction
-            print(f"DEBUG: Person name components:")
+            print("DEBUG: Person name components:")
             print(f"  beneficiary: {extracted_data.get('beneficiary')}")
             print(f"  full_name: {extracted_data.get('full_name')}")
             print(f"  first_name: {extracted_data.get('first_name')}")
@@ -1026,13 +1064,12 @@ class DocumentProcessor:
                     'inconsistencies': []
                 }
 
-                # Add timeline entry if date available
                 doc_date_raw = (
-                        extracted_data.get('notice_date') or
-                        extracted_data.get('issue_date') or
-                        extracted_data.get('received_date') or
-                        extracted_data.get('arrival_date') or
-                        extracted_data.get('expiration_date')
+                    extracted_data.get('notice_date') or
+                    extracted_data.get('issue_date') or
+                    extracted_data.get('received_date') or
+                    extracted_data.get('arrival_date') or
+                    extracted_data.get('expiration_date')
                 )
                 parsed_doc_date = parse_date_flexible(doc_date_raw)
                 if parsed_doc_date:
@@ -1045,7 +1082,6 @@ class DocumentProcessor:
 
                 print(f"DEBUG: Created person record: {results['person_records'][person_key]}")
 
-            # Create processing summary
             results['processing_summary'] = {
                 'file_overview': {
                     'total_pages': 1,
@@ -1058,12 +1094,10 @@ class DocumentProcessor:
                 'recommendations': []
             }
 
-            # Check completeness for each person
             for person_key, person_data in results['person_records'].items():
                 completeness = check_case_completeness(person_data)
                 results['processing_summary']['completeness_check'][person_key] = completeness
 
-            # Generate recommendations
             results['processing_summary']['recommendations'] = self.generate_audit_recommendations(
                 results['processing_summary'], results
             )
